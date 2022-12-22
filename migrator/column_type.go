@@ -64,6 +64,9 @@ func (ct ColumnType) Length() (length int64, ok bool) {
 	if ct.LengthValue.Valid {
 		return ct.LengthValue.Int64, true
 	}
+	if ct.SQLColumnType == nil {
+		return 0, false
+	}
 	return ct.SQLColumnType.Length()
 }
 
@@ -72,6 +75,9 @@ func (ct ColumnType) DecimalSize() (precision int64, scale int64, ok bool) {
 	if ct.DecimalSizeValue.Valid {
 		return ct.DecimalSizeValue.Int64, ct.ScaleValue.Int64, true
 	}
+	if ct.SQLColumnType == nil {
+		return 0, 0, false
+	}
 	return ct.SQLColumnType.DecimalSize()
 }
 
@@ -79,6 +85,9 @@ func (ct ColumnType) DecimalSize() (precision int64, scale int64, ok bool) {
 func (ct ColumnType) Nullable() (nullable bool, ok bool) {
 	if ct.NullableValue.Valid {
 		return ct.NullableValue.Bool, true
+	}
+	if ct.SQLColumnType == nil {
+		return false, false
 	}
 	return ct.SQLColumnType.Nullable()
 }
@@ -92,6 +101,9 @@ func (ct ColumnType) Unique() (unique bool, ok bool) {
 func (ct ColumnType) ScanType() reflect.Type {
 	if ct.ScanTypeValue != nil {
 		return ct.ScanTypeValue
+	}
+	if ct.SQLColumnType == nil {
+		reflect.TypeOf(new(interface{})).Elem()
 	}
 	return ct.SQLColumnType.ScanType()
 }
