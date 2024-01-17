@@ -2,6 +2,7 @@ package tests_test
 
 import (
 	"database/sql"
+	"database/sql/driver"
 	"fmt"
 	"reflect"
 	"regexp"
@@ -218,7 +219,7 @@ func TestFind(t *testing.T) {
 
 	// test array
 	var models2 [3]User
-	if err := DB.Where("name in (?)", []string{"find"}).Find(&models2).Error; err != nil || len(models2) != 3 {
+	if err := DB.Where("name in (?)", []string{"find"}).Find(&models2).Error; err != nil {
 		t.Errorf("errors happened when query find with in clause: %v, length: %v", err, len(models2))
 	} else {
 		for idx, user := range users {
@@ -230,7 +231,7 @@ func TestFind(t *testing.T) {
 
 	// test smaller array
 	var models3 [2]User
-	if err := DB.Where("name in (?)", []string{"find"}).Find(&models3).Error; err != nil || len(models3) != 2 {
+	if err := DB.Where("name in (?)", []string{"find"}).Find(&models3).Error; err != nil {
 		t.Errorf("errors happened when query find with in clause: %v, length: %v", err, len(models3))
 	} else {
 		for idx, user := range users[:2] {
@@ -658,6 +659,18 @@ func TestOrWithAllFields(t *testing.T) {
 	}
 }
 
+type Int64 int64
+
+func (v Int64) Value() (driver.Value, error) {
+	return v - 1, nil
+}
+
+func (f *Int64) Scan(v interface{}) error {
+	y := v.(int64)
+	*f = Int64(y + 1)
+	return nil
+}
+
 func TestPluck(t *testing.T) {
 	users := []*User{
 		GetUser("pluck-user1", Config{}),
@@ -685,6 +698,11 @@ func TestPluck(t *testing.T) {
 		t.Errorf("got error when pluck id: %v", err)
 	}
 
+	var ids2 []Int64
+	if err := DB.Model(User{}).Where("name like ?", "pluck-user%").Pluck("id", &ids2).Error; err != nil {
+		t.Errorf("got error when pluck id: %v", err)
+	}
+
 	for idx, name := range names {
 		if name != users[idx].Name {
 			t.Errorf("Unexpected result on pluck name, got %+v", names)
@@ -693,6 +711,12 @@ func TestPluck(t *testing.T) {
 
 	for idx, id := range ids {
 		if int(id) != int(users[idx].ID) {
+			t.Errorf("Unexpected result on pluck id, got %+v", ids)
+		}
+	}
+
+	for idx, id := range ids2 {
+		if int(id) != int(users[idx].ID+1) {
 			t.Errorf("Unexpected result on pluck id, got %+v", ids)
 		}
 	}
@@ -1094,12 +1118,12 @@ func TestSearchWithStruct(t *testing.T) {
 	}
 
 	result = dryRunDB.Where(User{Name: "jinzhu", Age: 18}).Find(&User{})
-	if !regexp.MustCompile(`WHERE .users.\..name. = .{1,3} AND .users.\..age. = .{1,3} AND .users.\..deleted_at. IS NULL`).MatchString(result.Statement.SQL.String()) {
+	if !regexp.MustCompile(`WHERE \(.users.\..name. = .{1,3} AND .users.\..age. = .{1,3}\) AND .users.\..deleted_at. IS NULL`).MatchString(result.Statement.SQL.String()) {
 		t.Errorf("invalid query SQL, got %v", result.Statement.SQL.String())
 	}
 
 	result = dryRunDB.Where(User{Name: "jinzhu"}, "name", "Age").Find(&User{})
-	if !regexp.MustCompile(`WHERE .users.\..name. = .{1,3} AND .users.\..age. = .{1,3} AND .users.\..deleted_at. IS NULL`).MatchString(result.Statement.SQL.String()) {
+	if !regexp.MustCompile(`WHERE \(.users.\..name. = .{1,3} AND .users.\..age. = .{1,3}\) AND .users.\..deleted_at. IS NULL`).MatchString(result.Statement.SQL.String()) {
 		t.Errorf("invalid query SQL, got %v", result.Statement.SQL.String())
 	}
 
@@ -1365,4 +1389,18 @@ func TestQueryResetNullValue(t *testing.T) {
 
 	AssertEqual(t, q1, qs[0])
 	AssertEqual(t, q2, qs[1])
+}
+
+func TestQueryError(t *testing.T) {
+	type P struct{}
+	var p1 P
+	err := DB.Take(&p1, 1).Error
+	AssertEqual(t, err, gorm.ErrModelAccessibleFieldsRequired)
+
+	var p2 interface{}
+
+	err = DB.Table("ps").Clauses(clause.Eq{Column: clause.Column{
+		Table: clause.CurrentTable, Name: clause.PrimaryKey,
+	}, Value: 1}).Scan(&p2).Error
+	AssertEqual(t, err, gorm.ErrModelValueRequired)
 }
